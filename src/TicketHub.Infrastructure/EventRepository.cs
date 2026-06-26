@@ -15,19 +15,20 @@ public class EventRepository : IEventRepository
 
     public EventRepository(AppDbContext db) => _db = db;
 
-    // NOTE: builds the WHERE clause by concatenating the user-supplied term directly
-    // into raw SQL. Convenient for "flexible" search, but the term is never parameterized.
+    // The search term is bound as a parameter through EF.Functions.ILike, so the
+    // provider sends it as a value (never as SQL text). SQL injection is not possible.
     public async Task<List<Event>> SearchAsync(string? term)
     {
         if (string.IsNullOrWhiteSpace(term))
             return await ListPublishedAsync();
 
-        var sql = $@"SELECT * FROM ""Events""
-                     WHERE ""IsPublished"" = TRUE
-                       AND (""Name"" ILIKE '%{term}%' OR ""Venue"" ILIKE '%{term}%')
-                     ORDER BY ""StartsAt"" ASC";
-
-        return await _db.Events.FromSqlRaw(sql).AsNoTracking().ToListAsync();
+        var pattern = $"%{term}%";
+        return await _db.Events
+            .Where(e => e.IsPublished &&
+                        (EF.Functions.ILike(e.Name, pattern) || EF.Functions.ILike(e.Venue, pattern)))
+            .OrderBy(e => e.StartsAt)
+            .AsNoTracking()
+            .ToListAsync();
     }
 
     public async Task<List<Event>> ListPublishedAsync() =>
