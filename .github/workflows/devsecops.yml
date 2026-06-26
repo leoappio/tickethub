@@ -184,22 +184,33 @@ jobs:
 
       - name: Build and start the stack
         run: |
+          cat > .env <<'EOF'
+          POSTGRES_USER=tickethub
+          POSTGRES_PASSWORD=ci_throwaway_pwd
+          POSTGRES_DB=tickethub
+          JWT_KEY=ci-only-jwt-key-please-rotate-0123456789abcdef
+          EOF
           docker compose up -d --build
           echo "Waiting for the API to become healthy..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8080/health > /dev/null; then
-              echo "API is up"; break
-            fi
+          for i in $(seq 1 40); do
+            if curl -sf http://localhost:8080/health > /dev/null; then echo "API is up"; break; fi
             sleep 5
           done
 
-      - name: ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
+      - name: ZAP API Scan (OpenAPI-seeded active scan)
+        run: |
+          mkdir -p zap-out
+          docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-api-scan.py -t http://localhost:8080/swagger/v1/swagger.json -f openapi \
+              -r zap-report.html -J zap-report.json -w zap-report.md -I || true
+
+      - name: Upload ZAP report
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          target: 'http://localhost:8080'
-          cmd_options: '-a'
-          allow_issue_writing: false
-          fail_action: false
+          name: dast-zap
+          path: zap-out/
 
       - name: Stop the stack
         if: always()

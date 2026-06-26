@@ -16,12 +16,13 @@ for i in $(seq 1 40); do
   sleep 3
 done
 
-echo "==> Running OWASP ZAP full scan (active) against http://localhost:8080"
-# Uses host networking so ZAP can reach the API published on localhost:8080.
+echo "==> Running OWASP ZAP API scan (active, OpenAPI-seeded) against the running app"
+# Seeding ZAP with the Swagger/OpenAPI definition makes it exercise every endpoint;
+# a plain spider would only see the 404 root. Host networking lets ZAP reach :8080.
 docker run --rm --network host \
   -v "$PWD/reports:/zap/wrk:rw" \
   ghcr.io/zaproxy/zaproxy:stable \
-  zap-full-scan.py -t http://localhost:8080 \
+  zap-api-scan.py -t http://localhost:8080/swagger/v1/swagger.json -f openapi \
     -r zap-report.html -J zap-report.json -w zap-report.md \
     -I || true
 

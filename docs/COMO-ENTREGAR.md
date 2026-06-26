@@ -32,17 +32,13 @@ bash scripts/run-dast.sh        # gera reports/zap-report.html
 
 ## 3. Gerar o PDF final
 
-Já existe `docs/RELATORIO.pdf`. Para regenerar após editar o `.md`:
+O PDF oficial (padrão UFSC, com logo/cabeçalho) é
+`docs/Relatorio_DevSecOps_Leonardo_Appio.pdf`, gerado por reportlab:
 ```bash
-python3 - <<'PY'
-import markdown, re, pathlib
-src = re.sub(r'^---\n.*?\n---\n','',pathlib.Path("docs/RELATORIO.md").read_text(),1,flags=re.S)
-body = markdown.markdown(src, extensions=['tables','fenced_code','toc','sane_lists'])
-pathlib.Path("docs/RELATORIO.html").write_text("<!doctype html><meta charset=utf-8>"+body)
-PY
-google-chrome --headless=new --print-to-pdf=docs/RELATORIO.pdf "file://$PWD/docs/RELATORIO.html"
+python3 scripts/gerar_relatorio.py
 ```
-Ou simplesmente abra `docs/RELATORIO.html` no navegador → **Imprimir → Salvar como PDF**.
+> Confira a constante `COURSE` no topo de `scripts/gerar_relatorio.py` — está como
+> `"INE5680 - Segurança da Informação"`; ajuste o código da disciplina se necessário.
 
 ## 4. Checklist de entrega (Moodle, PDF)
 
