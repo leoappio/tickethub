@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tickethub-api
+  labels:
+    app: tickethub-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tickethub-api
+  template:
+    metadata:
+      labels:
+        app: tickethub-api
+    spec:
+      containers:
+        - name: api
+          image: tickethub/api:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ConnectionStrings__Default
+              value: "Host=db;Port=5432;Database=tickethub;Username=tickethub;Password=tickethub_dev_pwd"
+            - name: Jwt__Key
+              value: "8f4b2e1c9a7d6350fae21bc4d98e7a13c0b5d6e7f8091a2b3c4d5e6f7a8b9c0d"
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            allowPrivilegeEscalation: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tickethub-api
+spec:
+  type: LoadBalancer
+  selector:
+    app: tickethub-api
+  ports:
+    - port: 80
+      targetPort: 8080

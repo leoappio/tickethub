@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: tickethub-db
+    environment:
+      POSTGRES_USER: tickethub
+      POSTGRES_PASSWORD: tickethub_dev_pwd
+      POSTGRES_DB: tickethub
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tickethub-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=tickethub;Username=tickethub;Password=tickethub_dev_pwd"
+      Jwt__Key: "8f4b2e1c9a7d6350fae21bc4d98e7a13c0b5d6e7f8091a2b3c4d5e6f7a8b9c0d"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
