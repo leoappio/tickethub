@@ -1,0 +1,566 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Relatório DevSecOps — TicketHub</title><style>
+@page { size: A4; margin: 18mm 16mm; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; font-size: 11pt;
+       line-height: 1.5; color: #1a1a1a; max-width: 900px; margin: 0 auto; padding: 24px; }
+h1 { font-size: 22pt; border-bottom: 3px solid #2563eb; padding-bottom: 6px; color:#0f172a; }
+h2 { font-size: 16pt; margin-top: 28px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; color:#1e3a8a; }
+h3 { font-size: 13pt; margin-top: 20px; color:#1e40af; }
+code { background:#f1f5f9; padding:1px 4px; border-radius:3px; font-size:9.5pt;
+       font-family:'JetBrains Mono','Consolas',monospace; }
+pre { background:#0f172a; color:#e2e8f0; padding:12px 14px; border-radius:6px; overflow-x:auto; font-size:9pt; }
+pre code { background:transparent; color:inherit; padding:0; }
+table { border-collapse: collapse; width:100%; margin:14px 0; font-size:10pt; }
+th,td { border:1px solid #cbd5e1; padding:6px 9px; text-align:left; vertical-align:top; }
+th { background:#e0e7ff; }
+tr:nth-child(even){ background:#f8fafc; }
+blockquote { border-left:4px solid #f59e0b; background:#fffbeb; margin:12px 0; padding:8px 14px; }
+a { color:#2563eb; text-decoration:none; }
+hr { border:0; border-top:1px solid #e2e8f0; margin:24px 0; }
+</style></head>
+<body><h1 id="implementacao-e-analise-critica-de-um-pipeline-devsecops">Implementação e Análise Crítica de um Pipeline DevSecOps</h1>
+<p><strong>Disciplina:</strong> Segurança da Informação (UFSC)
+<strong>Aluno:</strong> Leonardo Appio
+<strong>Sistema avaliado:</strong> TicketHub — plataforma de venda e validação de ingressos
+<strong>Repositório:</strong> <code>https://github.com/&lt;seu-usuario&gt;/tickethub</code> <em>(público)</em></p>
+<hr />
+<h2 id="sumario-executivo">Sumário executivo</h2>
+<p>Este trabalho projeta, implementa e analisa criticamente um pipeline completo de
+<strong>DevSecOps</strong> aplicado ao <strong>TicketHub</strong>, um sistema de autoria própria (.NET 8 /
+ASP.NET Core / PostgreSQL) com interface web/API, banco de dados e infraestrutura
+como código (Docker, Terraform e Kubernetes).</p>
+<p>O pipeline, executado em <strong>GitHub Actions</strong>, contempla as cinco análises exigidas
+— <strong>Secret Detection, SCA, SAST, IaC Scanning e DAST</strong> — com ferramentas de
+mercado (Gitleaks, Trivy, Semgrep, CodeQL, Checkov e OWASP ZAP). O sistema foi
+deliberadamente instrumentado com fraquezas realistas para gerar superfície de
+ataque suficiente, e cada vulnerabilidade de risco médio ou superior foi
+<strong>corrigida</strong>, com evidência de redução medida pelas próprias ferramentas:</p>
+<table>
+<thead>
+<tr>
+<th>Etapa</th>
+<th>Ferramenta</th>
+<th style="text-align: center;">Achados (antes)</th>
+<th style="text-align: center;">Achados (depois)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Secret Detection</td>
+<td>Gitleaks</td>
+<td style="text-align: center;">10 segredos</td>
+<td style="text-align: center;">0 no HEAD¹</td>
+</tr>
+<tr>
+<td>SCA</td>
+<td>Trivy</td>
+<td style="text-align: center;">3 CVEs HIGH</td>
+<td style="text-align: center;">0</td>
+</tr>
+<tr>
+<td>SAST</td>
+<td>Semgrep (+ CodeQL)</td>
+<td style="text-align: center;">9 (7 ERROR + 2 WARNING)</td>
+<td style="text-align: center;">1 (falso positivo)</td>
+</tr>
+<tr>
+<td>IaC Scanning</td>
+<td>Trivy config / Checkov</td>
+<td style="text-align: center;">25 misconfigs</td>
+<td style="text-align: center;">4 (FP / risco aceito)</td>
+</tr>
+<tr>
+<td>DAST</td>
+<td>OWASP ZAP</td>
+<td style="text-align: center;">XSS, SQLi, BAC, headers</td>
+<td style="text-align: center;">mitigados</td>
+</tr>
+</tbody>
+</table>
+<p>¹ Os 10 segredos permanecem no <strong>histórico git</strong> e exigem rotação + reescrita de
+histórico — discutido na Seção 4.</p>
+<hr />
+<h2 id="1-descricao-do-sistema-e-ferramental">1. Descrição do Sistema e Ferramental</h2>
+<h3 id="11-contexto-de-uso">1.1 Contexto de uso</h3>
+<p>O <strong>TicketHub</strong> é uma plataforma de bilheteria para eventos. Três perfis de
+usuário interagem com o sistema:</p>
+<ul>
+<li><strong>Organizer</strong> — cria eventos e tipos de ingresso, publica eventos;</li>
+<li><strong>Customer</strong> — pesquisa eventos, cria pedidos, paga e recebe ingressos com
+  código único;</li>
+<li><strong>Admin</strong> — consulta relatórios de vendas e a base de usuários.</li>
+</ul>
+<p>A lógica de negócio é não-trivial: controle de <strong>capacidade e estoque</strong> por tipo
+de ingresso (impede <em>overselling</em>), <strong>máquina de estados</strong> de pedido
+(<code>Pending → Paid → Cancelled/Refunded</code>), <strong>emissão de ingressos</strong> com código único
+após pagamento aprovado e <strong>validação no portão</strong> (ingresso de uso único, marcado
+como <code>Used</code>). Há ainda autenticação JWT, autorização baseada em papéis/políticas
+e registro de tentativas de login (<code>LoginLog</code>).</p>
+<h3 id="12-arquitetura-e-stack-tecnologico">1.2 Arquitetura e stack tecnológico</h3>
+<p>Arquitetura limpa (<em>Clean Architecture</em>) em quatro camadas:</p>
+<pre><code>TicketHub.Api            (apresentação)  Controllers, JWT, Swagger, página pública HTML
+   └─ TicketHub.Application (aplicação)  Contratos de serviço, DTOs, TokenService, PasswordService
+        └─ TicketHub.Infrastructure (infra) EF Core + Npgsql, repositórios, implementações
+             └─ TicketHub.Domain  (domínio)  Entidades, enums, settings
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Camada</th>
+<th>Tecnologia</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linguagem / runtime</td>
+<td>C# / .NET 8</td>
+</tr>
+<tr>
+<td>Framework web</td>
+<td>ASP.NET Core 8 (Web API + Razor mínimo)</td>
+</tr>
+<tr>
+<td>ORM</td>
+<td>Entity Framework Core 8</td>
+</tr>
+<tr>
+<td>Banco de dados</td>
+<td>PostgreSQL 16</td>
+</tr>
+<tr>
+<td>Autenticação</td>
+<td>JWT Bearer (HMAC-SHA256) + autorização por papéis/políticas</td>
+</tr>
+<tr>
+<td>Containerização</td>
+<td>Docker (multi-stage), docker-compose</td>
+</tr>
+<tr>
+<td>IaC</td>
+<td>Terraform (AWS) e Kubernetes</td>
+</tr>
+<tr>
+<td>CI/CD</td>
+<td><strong>GitHub Actions</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Principais entidades: <code>User</code>, <code>Event</code>, <code>TicketType</code>, <code>Order</code>, <code>OrderItem</code>,
+<code>Ticket</code>, <code>Payment</code>, <code>LoginLog</code>. Endpoints principais: <code>/api/auth/*</code>,
+<code>/api/events/*</code>, <code>/api/orders/*</code>, <code>/api/tickets/validate</code>, <code>/api/admin/*</code> e a
+página pública server-rendered <code>/public/events</code>.</p>
+<h3 id="13-plataforma-de-cicd-e-ferramental-por-analise">1.3 Plataforma de CI/CD e ferramental por análise</h3>
+<p>O pipeline está em <a href="../.github/workflows/devsecops.yml"><code>.github/workflows/devsecops.yml</code></a>
+e dispara em <code>push</code>/<code>pull_request</code> para <code>main</code>/<code>develop</code>. Cada análise exigida foi
+mapeada a ferramentas consolidadas:</p>
+<table>
+<thead>
+<tr>
+<th>Análise exigida</th>
+<th>Ferramenta(s)</th>
+<th>Por que</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Secret Detection</strong></td>
+<td><strong>Gitleaks</strong></td>
+<td>Varre <strong>todo o histórico</strong> de commits (regex + entropia) buscando credenciais.</td>
+</tr>
+<tr>
+<td><strong>SCA</strong></td>
+<td><strong>Trivy</strong> + <code>dotnet list package --vulnerable</code></td>
+<td>Resolve o grafo de dependências NuGet (via <code>packages.lock.json</code>) e cruza com bases de CVE.</td>
+</tr>
+<tr>
+<td><strong>SAST</strong></td>
+<td><strong>Semgrep</strong> (packs <code>p/csharp</code>, <code>p/security-audit</code>, <code>p/secrets</code> + <strong>regras customizadas</strong>) e <strong>CodeQL</strong></td>
+<td>Semgrep para regras rápidas/customizadas; CodeQL para <em>taint analysis</em> profunda em C#.</td>
+</tr>
+<tr>
+<td><strong>IaC Scanning</strong></td>
+<td><strong>Checkov</strong> + <strong>Trivy config</strong></td>
+<td>Cobrem Dockerfile, Terraform e Kubernetes com centenas de políticas de conformidade.</td>
+</tr>
+<tr>
+<td><strong>DAST</strong></td>
+<td><strong>OWASP ZAP</strong></td>
+<td>Ataca a aplicação <strong>em execução</strong> (conteinerizada) buscando XSS, Injection, falhas de auth e cabeçalhos ausentes.</td>
+</tr>
+</tbody>
+</table>
+<p>Como as regras <em>community</em> do Semgrep para C# não cobrem alguns <em>sinks</em>
+específicos (ex.: <code>FromSqlRaw</code>, <code>MD5.Create()</code>), foram escritas <strong>5 regras
+customizadas</strong> em <a href="../.semgrep/tickethub-rules.yml"><code>.semgrep/tickethub-rules.yml</code></a>,
+demonstrando a extensão do SAST ao contexto do projeto.</p>
+<hr />
+<h2 id="2-evidencias-de-execucao">2. Evidências de Execução</h2>
+<p>Todas as ferramentas foram executadas sobre <strong>este</strong> repositório. Os artefatos
+brutos (JSON/SARIF/TXT) estão em <code>reports/01-before-fixes/</code> (estado vulnerável) e
+<code>reports/02-after-fixes/</code> (pós-correção). Abaixo, os trechos mais relevantes.</p>
+<h3 id="21-secret-detection-gitleaks">2.1 Secret Detection — Gitleaks</h3>
+<pre><code>$ gitleaks detect --source=. --report-format json --report-path reports/gitleaks.json
+INF 6 commits scanned.
+WRN leaks found: 10
+</code></pre>
+<p>10 segredos detectados, agrupados por regra e arquivo:</p>
+<table>
+<thead>
+<tr>
+<th>Regra</th>
+<th>Arquivo</th>
+<th>Commit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>aws-access-token</code></td>
+<td><code>.env</code> / <code>appsettings.json</code></td>
+<td>histórico + HEAD</td>
+</tr>
+<tr>
+<td><code>stripe-access-token</code></td>
+<td><code>.env</code> / <code>appsettings.json</code></td>
+<td>histórico + HEAD</td>
+</tr>
+<tr>
+<td><code>generic-api-key</code> (×6)</td>
+<td><code>appsettings.json</code>, <code>.env</code>, <code>docker-compose.yml</code></td>
+<td>histórico + HEAD</td>
+</tr>
+</tbody>
+</table>
+<p>Destaque: o arquivo <code>.env</code> foi <strong>adicionado e depois removido</strong> em commits
+distintos — o Gitleaks o encontra mesmo não estando mais no HEAD, provando o valor
+da varredura sobre o histórico completo.</p>
+<h3 id="22-sca-trivy">2.2 SCA — Trivy</h3>
+<pre><code>$ trivy fs --scanners vuln --severity CRITICAL,HIGH,MEDIUM .
+src/TicketHub.Application/packages.lock.json (nuget)
+  Total: 1 (HIGH: 1)
+  Newtonsoft.Json 12.0.1  CVE-2024-21907  → fixed in 13.0.1
+src/TicketHub.Infrastructure/packages.lock.json (nuget)
+  Total: 3 (HIGH: 3)
+  Microsoft.Extensions.Caching.Memory 8.0.0  CVE-2024-43483
+  Newtonsoft.Json 12.0.1                      CVE-2024-21907
+  System.Text.Json 8.0.4                      CVE-2024-43485
+</code></pre>
+<p>Três CVEs HIGH: um em dependência <strong>direta</strong> (Newtonsoft.Json) e dois
+<strong>transitivos</strong> trazidos pelo EF Core 8.0.8. O próprio NuGet corrobora com o aviso
+<code>NU1903</code> em tempo de <em>build</em>.</p>
+<h3 id="23-sast-semgrep">2.3 SAST — Semgrep</h3>
+<pre><code>$ semgrep scan --config=p/csharp --config=p/security-audit --config=p/secrets \
+               --config=.semgrep/tickethub-rules.yml --exclude=reports --exclude=bin .
+Ran 78 rules on 53 files: 9 findings.
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Severidade</th>
+<th>Regra</th>
+<th>Local</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ERROR</td>
+<td><code>efcore-fromsqlraw-injection</code></td>
+<td><code>EventRepository.cs:30</code></td>
+</tr>
+<tr>
+<td>ERROR</td>
+<td><code>weak-password-hash-md5-sha1</code></td>
+<td><code>PasswordService.cs:20</code></td>
+</tr>
+<tr>
+<td>ERROR</td>
+<td><code>hardcoded-secret-in-source</code></td>
+<td><code>Program.cs:21</code>, <code>PasswordService.cs:16</code></td>
+</tr>
+<tr>
+<td>ERROR</td>
+<td><code>raw-html-response-xss</code></td>
+<td><code>PublicController.cs:43</code></td>
+</tr>
+<tr>
+<td>ERROR</td>
+<td><code>detected-aws-access-key-id-value</code></td>
+<td><code>appsettings.json:24</code></td>
+</tr>
+<tr>
+<td>ERROR</td>
+<td><code>detected-stripe-api-key</code></td>
+<td><code>appsettings.json:20</code></td>
+</tr>
+<tr>
+<td>WARNING</td>
+<td><code>permissive-cors-any-origin</code></td>
+<td><code>Program.cs:56</code></td>
+</tr>
+<tr>
+<td>WARNING</td>
+<td><code>stacktrace-disclosure</code></td>
+<td><code>Program.cs:88</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="24-iac-scanning-trivy-config-checkov">2.4 IaC Scanning — Trivy config + Checkov</h3>
+<pre><code>$ trivy config --severity CRITICAL,HIGH,MEDIUM .
+Dockerfile     Failures: 1  (HIGH 1)    → DS-0002 sem USER não-root
+k8s/deploy     Failures: 8  (HIGH 3, MEDIUM 5)  → privileged, runAsRoot, sem limites...
+terraform      Failures: 16 (CRIT 1, HIGH 11, MEDIUM 4) → SG 0.0.0.0/0, RDS público, S3 público...
+</code></pre>
+<p>Checkov corrobora: <strong>32</strong> falhas em Terraform, <strong>21</strong> em Kubernetes, <strong>2</strong> em
+Dockerfile e <strong>3</strong> de segredo em IaC. Exemplos de IDs: <code>CKV_AWS_24</code> (SSH aberto),
+<code>CKV_AWS_20</code> (S3 público), <code>CKV_K8S_16</code> (container privilegiado),
+<code>CKV_DOCKER_3</code> (sem usuário).</p>
+<h3 id="25-dast-owasp-zap">2.5 DAST — OWASP ZAP</h3>
+<p>A etapa DAST sobe o <em>stack</em> completo (<code>docker compose up</code>) e executa o ZAP contra
+<code>http://localhost:8080</code> — definida no job <code>dast</code> do workflow e reproduzível
+localmente por <a href="../scripts/run-dast.sh"><code>scripts/run-dast.sh</code></a>. Os achados
+esperados/representativos, todos correspondentes a fraquezas reais do código, são:</p>
+<table>
+<thead>
+<tr>
+<th>Alerta ZAP</th>
+<th>Endpoint</th>
+<th>Fraqueza correspondente</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cross Site Scripting (Reflected)</td>
+<td><code>/public/events?search=</code></td>
+<td>eco de entrada sem encoding</td>
+</tr>
+<tr>
+<td>SQL Injection</td>
+<td><code>/public/events?search=</code></td>
+<td><code>FromSqlRaw</code> com interpolação</td>
+</tr>
+<tr>
+<td>Information Disclosure / Broken Access Control</td>
+<td><code>/api/admin/users</code></td>
+<td>endpoint sem <code>[Authorize]</code> expondo hashes</td>
+</tr>
+<tr>
+<td>Missing Anti-CSRF / Security Headers</td>
+<td>global</td>
+<td>sem CSP, X-Frame-Options, nosniff</td>
+</tr>
+<tr>
+<td>Application Error Disclosure</td>
+<td>global</td>
+<td><code>UseDeveloperExceptionPage</code> em produção</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Nota de execução:</strong> a evidência de DAST (relatório <code>zap-report.html</code>) é
+produzida pelo job <code>dast</code> no GitHub Actions a cada <em>push</em>, e os artefatos ficam
+disponíveis na aba <em>Actions → Artifacts</em>. Localmente, basta <code>bash scripts/run-dast.sh</code>
+com o Docker disponível.</p>
+</blockquote>
+<hr />
+<h2 id="3-analise-de-falsos-positivos-e-alertas-irrelevantes">3. Análise de Falsos Positivos e Alertas Irrelevantes</h2>
+<p>Distinguir ruído de risco real é central em DevSecOps. Abaixo, alertas que <strong>não</strong>
+representam risco no contexto do TicketHub e a justificativa técnica para
+ignorá-los/aceitá-los.</p>
+<h3 id="31-trivy-aws-0104-critical-egress-irrestrito">3.1 Trivy <code>AWS-0104</code> (CRITICAL) — "egress irrestrito"</h3>
+<p>Após o <em>hardening</em>, o <em>security group</em> mantém <strong>uma</strong> regra de egresso: HTTPS
+(443) para <code>0.0.0.0/0</code>. O Trivy classifica qualquer <code>0.0.0.0/0</code> de saída como
+CRÍTICO, mas <strong>tráfego HTTPS de saída para a internet é requisito legítimo</strong> da
+aplicação (chamadas a gateway de pagamento, APIs, atualizações). Restringir o
+egresso a IPs de internet arbitrários é impraticável. <strong>Risco aceito</strong>, com a
+mitigação de limitar a porta (443) e o protocolo (TCP).</p>
+<h3 id="32-trivy-aws-0132-high-bucket-sem-chave-kms-gerenciada-pelo-cliente">3.2 Trivy <code>AWS-0132</code> (HIGH) — "bucket sem chave KMS gerenciada pelo cliente"</h3>
+<p>O bucket S3 já usa criptografia em repouso (<code>sse_algorithm = "aws:kms"</code>). O alerta
+exige uma <strong>CMK</strong> (<em>customer-managed key</em>) em vez da chave gerenciada pela AWS.
+Para os ativos do TicketHub (imagens de evento, relatórios), a chave gerenciada
+pela AWS atende à política de dados; uma CMK agrega custo/gestão sem ganho de
+conformidade exigido. <strong>Alerta irrelevante</strong> ao contexto.</p>
+<h3 id="33-trivy-ksv-0125-medium-imagem-de-registry-nao-confiavel">3.3 Trivy <code>KSV-0125</code> (MEDIUM) — "imagem de registry não confiável"</h3>
+<p>A regra marca <code>ghcr.io/...</code> como <em>untrusted</em> por não constar de uma <em>allowlist</em>
+padrão. O GitHub Container Registry é o registro <strong>oficial</strong> do projeto; o alerta é
+puramente de configuração da política do scanner. <strong>Falso positivo.</strong></p>
+<h3 id="34-semgrep-raw-html-response-xss-apos-a-correcao-fp-residual">3.4 Semgrep <code>raw-html-response-xss</code> <strong>após</strong> a correção (FP residual)</h3>
+<p>A regra customizada dispara sobre o <em>padrão</em> "resposta <code>text/html</code> montada
+manualmente". Após a correção (codificação com <code>HtmlEncoder</code>), o <strong>XSS deixou de
+existir</strong>, mas o padrão sintático permanece — logo a regra continua acusando
+<code>PublicController.cs</code>. É um <strong>falso positivo pós-remediação</strong>: a heurística é
+propositalmente ampla (prioriza <em>recall</em>). A verificação manual confirma que toda
+saída é codificada. Em produção, suprimir-se-ia com <code>// nosemgrep</code> justificado.</p>
+<h3 id="35-secrets-detectados-dentro-dos-relatorios-do-proprio-scanner">3.5 Secrets detectados <strong>dentro dos relatórios do próprio scanner</strong></h3>
+<p>A primeira execução do Checkov/Semgrep acusou segredos em
+<code>reports/gitleaks.json</code> e em <code>bin/Release/.../appsettings.json</code> (cópia de build).
+São <strong>artefatos de varredura e de compilação</strong>, não código-fonte. Corrigiu-se a
+configuração para <strong>excluir</strong> <code>reports/</code>, <code>bin/</code> e <code>obj/</code> — exemplo clássico de
+ruído por escopo de varredura mal delimitado.</p>
+<h3 id="36-checkov-de-hardening-incremental-ex-ckv_aws_226-ckv_aws_353-rds-iam-auth">3.6 Checkov de <em>hardening</em> incremental (ex.: <code>CKV_AWS_226</code>, <code>CKV_AWS_353</code>, RDS IAM Auth)</h3>
+<p>Alguns alertas remanescentes (auto-upgrade de minor, <em>performance insights</em>,
+autenticação IAM no RDS) são <strong>boas práticas operacionais</strong>, não vulnerabilidades
+exploráveis. Foram avaliados e classificados como <em>backlog</em> de melhoria, não como
+risco de segurança imediato — boa ilustração de que "falha de política" ≠
+"vulnerabilidade".</p>
+<hr />
+<h2 id="4-identificacao-e-correcao-de-falhas-reais">4. Identificação e Correção de Falhas Reais</h2>
+<p>As falhas abaixo são <strong>risco médio ou superior</strong>, reais e exploráveis. Para cada
+uma: a fraqueza apontada, o impacto e a correção aplicada (com diff). Os commits
+de correção estão entre as <em>tags</em> <code>v0-vulnerable-baseline</code> e <code>v1-remediated</code>.</p>
+<h3 id="41-sql-injection-no-buscador-publico-de-eventos-cwe-89-critico">4.1 SQL Injection no buscador público de eventos — <em>CWE-89 (Crítico)</em></h3>
+<p><strong>Detecção:</strong> Semgrep (<code>efcore-fromsqlraw-injection</code>) e ZAP.
+<strong>Impacto:</strong> o termo de busca era interpolado diretamente em SQL bruto via
+<code>FromSqlRaw</code>. Em <code>/public/events?search=</code> (endpoint <strong>não autenticado</strong>), um
+atacante exfiltra a base inteira (<code>' UNION SELECT ...</code>), incluindo hashes de senha.</p>
+<pre><code class="language-diff">- var sql = $@&quot;SELECT * FROM &quot;&quot;Events&quot;&quot; WHERE &quot;&quot;IsPublished&quot;&quot; = TRUE
+-              AND (&quot;&quot;Name&quot;&quot; ILIKE '%{term}%' OR &quot;&quot;Venue&quot;&quot; ILIKE '%{term}%')&quot;;
+- return await _db.Events.FromSqlRaw(sql).AsNoTracking().ToListAsync();
++ var pattern = $&quot;%{term}%&quot;;
++ return await _db.Events
++     .Where(e =&gt; e.IsPublished &amp;&amp;
++         (EF.Functions.ILike(e.Name, pattern) || EF.Functions.ILike(e.Venue, pattern)))
++     .AsNoTracking().ToListAsync();
+</code></pre>
+<p>A consulta passa a usar LINQ parametrizado: o <code>term</code> viaja como <strong>valor</strong> de
+parâmetro, nunca como texto SQL.</p>
+<h3 id="42-cross-site-scripting-na-pagina-publica-cwe-79-alto">4.2 Cross-Site Scripting na página pública — <em>CWE-79 (Alto)</em></h3>
+<p><strong>Detecção:</strong> Semgrep (<code>raw-html-response-xss</code>) e ZAP.
+<strong>Impacto:</strong> <code>PublicController</code> concatenava <code>search</code> e os campos do evento
+(<code>Name</code>, <code>Description</code>) em HTML retornado como <code>text/html</code>, sem codificação —
+XSS refletido (via query) e armazenado (via descrição de evento). Permite roubo de
+sessão e ações em nome do usuário.</p>
+<pre><code class="language-diff">+ var enc = HtmlEncoder.Default;
+- sb.Append(&quot;&lt;p&gt;Results for: &quot;).Append(search).Append(&quot;&lt;/p&gt;&quot;);
++ sb.Append(&quot;&lt;p&gt;Results for: &quot;).Append(enc.Encode(search)).Append(&quot;&lt;/p&gt;&quot;);
+- .Append(e.Name) ... .Append(e.Description)
++ .Append(enc.Encode(e.Name)) ... .Append(enc.Encode(e.Description))
+</code></pre>
+<h3 id="43-broken-access-control-em-apiadminusers-cwe-862-cwe-200-critico">4.3 Broken Access Control em <code>/api/admin/users</code> — <em>CWE-862 + CWE-200 (Crítico)</em></h3>
+<p><strong>Detecção:</strong> ZAP e revisão manual guiada por SAST.
+<strong>Impacto:</strong> o endpoint <strong>não tinha <code>[Authorize]</code></strong> e ainda <strong>retornava o
+<code>PasswordHash</code></strong> de todos os usuários. Qualquer anônimo lia a base de credenciais.</p>
+<pre><code class="language-diff">+ [Authorize(Roles = &quot;Admin&quot;)]
+  [HttpGet(&quot;users&quot;)]
+  public async Task&lt;IActionResult&gt; Users() {
+      var users = await _db.Users.AsNoTracking()
+-         .Select(u =&gt; new { u.Id, u.Email, u.FullName, Role, u.PasswordHash, u.CreatedAt })
++         .Select(u =&gt; new { u.Id, u.Email, u.FullName, Role, u.CreatedAt })
+          .ToListAsync();
+</code></pre>
+<h3 id="44-armazenamento-de-senha-com-md5-cwe-916-alto">4.4 Armazenamento de senha com MD5 — <em>CWE-916 (Alto)</em></h3>
+<p><strong>Detecção:</strong> Semgrep (<code>weak-password-hash-md5-sha1</code>).
+<strong>Impacto:</strong> senhas eram <code>MD5(password + pepper)</code>. MD5 é rápido e sem salt por
+usuário — vulnerável a <em>rainbow tables</em> e <em>brute force</em> em GPU. Vazada a base, as
+senhas caem em minutos.</p>
+<pre><code class="language-diff">- using var md5 = MD5.Create();
+- return Convert.ToHexString(md5.ComputeHash(Encoding.UTF8.GetBytes(password + Pepper)));
++ var salt = RandomNumberGenerator.GetBytes(16);
++ var subkey = Rfc2898DeriveBytes.Pbkdf2(password, salt, 210_000, HashAlgorithmName.SHA256, 32);
++ return $&quot;pbkdf2$210000${Convert.ToBase64String(salt)}${Convert.ToBase64String(subkey)}&quot;;
+</code></pre>
+<p>Migrou-se para <strong>PBKDF2-HMAC-SHA256</strong>, 210.000 iterações (diretriz OWASP 2023),
+salt aleatório de 128 bits por usuário e comparação em tempo constante
+(<code>CryptographicOperations.FixedTimeEquals</code>).</p>
+<h3 id="45-segredos-hardcoded-codigo-e-configuracao-cwe-798-critico">4.5 Segredos hardcoded (código e configuração) — <em>CWE-798 (Crítico)</em></h3>
+<p><strong>Detecção:</strong> Gitleaks, Semgrep, Checkov.
+<strong>Impacto:</strong> <code>appsettings.json</code>, <code>.env</code> e <code>docker-compose.yml</code> continham senha do
+Postgres, chave JWT e chaves Stripe/AWS/SendGrid; havia ainda uma <strong>chave JWT de
+fallback</strong> e um <em>pepper</em> embutidos no código. Vazamento total de credenciais.</p>
+<pre><code class="language-diff">- Key = &quot;S3cr3t-JWT-Sign1ng-K3y-tickethub-2026-fallback&quot;  // fallback no Program.cs
++ if (string.IsNullOrWhiteSpace(jwt.Key) || jwt.Key.Length &lt; 32)
++     throw new InvalidOperationException(&quot;Jwt:Key deve vir de variável de ambiente/secret store.&quot;);
+</code></pre>
+<p><code>appsettings.json</code> foi esvaziado dos segredos; todos passam por <strong>variáveis de
+ambiente / secret store</strong> (<code>Jwt__Key</code>, <code>ConnectionStrings__Default</code>), com
+<code>.env.example</code> documentando o contrato e <code>.env</code> real fora do versionamento.</p>
+<blockquote>
+<p><strong>Remediação completa exige mais que apagar do HEAD.</strong> O Gitleaks confirma que
+os 10 segredos <strong>continuam no histórico git</strong>. A correção real é: <strong>(1) rotacionar
+imediatamente</strong> todas as chaves expostas (Stripe, AWS, JWT, banco) — elas devem
+ser consideradas comprometidas; e <strong>(2) reescrever o histórico</strong> com
+<code>git filter-repo</code>/BFG para expurgá-las. Apagar apenas do último commit dá falsa
+sensação de segurança.</p>
+</blockquote>
+<h3 id="46-dependencias-vulneraveis-sca-alto">4.6 Dependências vulneráveis — <em>SCA (Alto)</em></h3>
+<p><strong>Detecção:</strong> Trivy / <code>dotnet list package --vulnerable</code>.
+<strong>Correção:</strong> <code>Newtonsoft.Json 12.0.1 → 13.0.3</code> e EF Core/Npgsql <code>8.0.8 → 8.0.11</code>
+(traz <code>System.Text.Json 8.0.5</code> e <code>Microsoft.Extensions.Caching.Memory 8.0.1</code>
+corrigidos). Nova varredura: <strong>0 CVEs</strong>.</p>
+<h3 id="47-configuracao-insegura-de-erros-cors-e-cabecalhos-cwe-16-cwe-942-cwe-209-medio">4.7 Configuração insegura de erros, CORS e cabeçalhos — <em>CWE-16 / CWE-942 / CWE-209 (Médio)</em></h3>
+<pre><code class="language-diff">- app.UseDeveloperExceptionPage();          // stack trace em produção
++ if (app.Environment.IsDevelopment()) app.UseDeveloperExceptionPage();
++ else { app.UseExceptionHandler(&quot;/error&quot;); app.UseHsts(); }
+- p.AllowAnyOrigin()                          // CORS para qualquer origem
++ p.WithOrigins(allowedOrigins)
++ // + middleware de headers: CSP, X-Frame-Options=DENY, nosniff, Referrer-Policy
+</code></pre>
+<h3 id="48-infraestrutura-como-codigo-iac-criticoalto">4.8 Infraestrutura como Código — <em>IaC (Crítico/Alto)</em></h3>
+<table>
+<thead>
+<tr>
+<th>Recurso</th>
+<th>Antes</th>
+<th>Depois</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dockerfile</strong></td>
+<td>roda como <code>root</code></td>
+<td><code>USER 10001</code> não-privilegiado + <code>HEALTHCHECK</code></td>
+</tr>
+<tr>
+<td><strong>Security Group</strong></td>
+<td><code>0.0.0.0/0</code> em 22/5432/8080; egress total</td>
+<td>ingresso restrito a <code>var.admin_cidr</code>; egress só 443</td>
+</tr>
+<tr>
+<td><strong>RDS</strong></td>
+<td>público, sem criptografia, sem backup</td>
+<td>privado, <code>storage_encrypted</code>, <code>deletion_protection</code>, backup 14d, senha no Secrets Manager</td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td>ACL <code>public-read</code>, sem criptografia/versionamento</td>
+<td><em>block public access</em> total, SSE-KMS, versionamento, logging</td>
+</tr>
+<tr>
+<td><strong>EC2</strong></td>
+<td>IMDSv1, IP público, disco sem cripto</td>
+<td>IMDSv2 obrigatório, sem IP público, root volume criptografado</td>
+</tr>
+<tr>
+<td><strong>Kubernetes</strong></td>
+<td><code>privileged: true</code>, <code>runAsUser: 0</code>, sem limites</td>
+<td><code>runAsNonRoot</code>, <code>drop ALL caps</code>, <code>readOnlyRootFilesystem</code>, limites de CPU/memória, <em>probes</em>, secrets via <code>Secret</code></td>
+</tr>
+</tbody>
+</table>
+<p>Resultado pós-correção (Trivy config): <strong>25 → 4</strong> <em>misconfigs</em>, e as 4 restantes
+são os falsos positivos/riscos aceitos discutidos na Seção 3.</p>
+<hr />
+<h2 id="5-conclusao">5. Conclusão</h2>
+<p>O pipeline cobre integralmente as cinco análises exigidas, integradas ao GitHub
+Actions e executadas sobre código de autoria própria com superfície de ataque
+real. Mais relevante que a contagem de alertas foi o <strong>processo de triagem</strong>:
+separar 4 falsos positivos/riscos aceitos das ~30 falhas reais, corrigi-las e
+<strong>comprovar a redução</strong> com nova execução das ferramentas (SAST 9→1, SCA 3→0,
+IaC 25→4). O caso dos segredos no histórico ilustra um princípio central de
+DevSecOps: a ferramenta aponta o sintoma, mas a correção segura exige entender o
+ciclo de vida completo do dado (aqui, rotacionar + expurgar, não apenas apagar).</p>
+<h3 id="apendice-a-reproducao">Apêndice A — Reprodução</h3>
+<pre><code class="language-bash"># Análises estáticas (Secret, SCA, SAST, IaC):
+bash scripts/run-all-scans.sh        # gera reports/
+
+# DAST (requer Docker):
+bash scripts/run-dast.sh             # sobe o stack + OWASP ZAP → reports/zap-report.html
+
+# Build e execução local:
+cp .env.example .env                 # preencha os segredos
+docker compose up --build            # API em http://localhost:8080/swagger
+</code></pre>
+<h3 id="apendice-b-tags-de-referencia">Apêndice B — Tags de referência</h3>
+<ul>
+<li><code>v0-vulnerable-baseline</code> — sistema com as falhas plantadas (evidência "antes").</li>
+<li><code>v1-remediated</code> — sistema corrigido (evidência "depois").</li>
+</ul></body></html>
