@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Mvc;
 using TicketHub.Application;
 
@@ -17,23 +18,25 @@ public class PublicController : ControllerBase
     public async Task<ContentResult> Events([FromQuery] string? search)
     {
         var events = await _events.SearchAsync(search);
+        var enc = HtmlEncoder.Default;
 
         var sb = new StringBuilder();
         sb.Append("<!doctype html><html><head><title>TicketHub — Events</title></head><body>");
         sb.Append("<h1>Upcoming events</h1>");
         sb.Append("<form method=\"get\" action=\"/public/events\">");
-        sb.Append("<input name=\"search\" placeholder=\"search events\" value=\"").Append(search).Append("\"/>");
+        sb.Append("<input name=\"search\" placeholder=\"search events\" value=\"")
+          .Append(enc.Encode(search ?? string.Empty)).Append("\"/>");
         sb.Append("<button type=\"submit\">Search</button></form>");
 
         if (!string.IsNullOrEmpty(search))
-            sb.Append("<p>Results for: ").Append(search).Append("</p>");
+            sb.Append("<p>Results for: ").Append(enc.Encode(search)).Append("</p>");
 
         sb.Append("<ul>");
         foreach (var e in events)
         {
-            sb.Append("<li><strong>").Append(e.Name).Append("</strong> — ")
-              .Append(e.Venue).Append("<br/>")
-              .Append(e.Description).Append("</li>");
+            sb.Append("<li><strong>").Append(enc.Encode(e.Name)).Append("</strong> — ")
+              .Append(enc.Encode(e.Venue)).Append("<br/>")
+              .Append(enc.Encode(e.Description)).Append("</li>");
         }
         sb.Append("</ul></body></html>");
 
