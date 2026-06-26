@@ -20,12 +20,13 @@ public class AdminController : ControllerBase
     }
 
     // Internal users listing used by the back-office dashboard.
+    [Authorize(Roles = "Admin")]
     [HttpGet("users")]
     public async Task<IActionResult> Users()
     {
         var users = await _db.Users
             .AsNoTracking()
-            .Select(u => new { u.Id, u.Email, u.FullName, Role = u.Role.ToString(), u.PasswordHash, u.CreatedAt })
+            .Select(u => new { u.Id, u.Email, u.FullName, Role = u.Role.ToString(), u.CreatedAt })
             .ToListAsync();
         return Ok(users);
     }
