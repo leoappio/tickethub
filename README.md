@@ -1,9 +1,9 @@
 # TicketHub
 
-Event ticketing & access-control platform — a .NET 8 Web API for selling event
+Event ticketing & access-control platform, a .NET 8 Web API for selling event
 tickets and validating them at the venue gate.
 
-> Academic project for **INE5680 — Segurança da Informação (UFSC)**. This
+> Academic project for **INE5429, Segurança da Informação (UFSC)**. This
 > repository is intentionally instrumented with realistic security weaknesses so
 > that a full **DevSecOps pipeline** (Secret Detection, SCA, SAST, IaC Scanning,
 > DAST) has a meaningful attack surface to evaluate. **Do not deploy as-is.**

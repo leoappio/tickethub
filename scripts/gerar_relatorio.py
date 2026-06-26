@@ -17,8 +17,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(BASE, "docs", "Relatorio_DevSecOps_Leonardo_Appio.pdf")
 LOGO = os.path.join(BASE, "docs", "ufsc-logo.png")
 
-# >>> Confira o codigo da disciplina antes de entregar <<<
-COURSE = "INE5680 - Segurança da Informação"
+COURSE = "INE5429 - Segurança da Informação"
 AUTHOR = "Leonardo Lima Appio - 21101963"
 REPO = "https://github.com/leoappio/tickethub"
 
@@ -92,7 +91,7 @@ s.append(Paragraph("Universidade Federal de Santa Catarina", sub_style))
 s.append(Paragraph(COURSE, sub_style))
 s.append(Spacer(1, 0.4 * cm))
 s.append(Paragraph("Implementação e Análise Crítica de um Pipeline DevSecOps", title_style))
-s.append(Paragraph("Sistema avaliado: TicketHub — Plataforma de Venda e Validação de Ingressos (.NET 8)", sub_style))
+s.append(Paragraph("Sistema avaliado: TicketHub, Plataforma de Venda e Validação de Ingressos (.NET 8)", sub_style))
 s.append(Spacer(1, 0.15 * cm))
 s.append(Paragraph(AUTHOR, sub_style))
 s.append(Paragraph(f'Repositório: <font face="Courier">{REPO}</font>', sub_style))
@@ -105,23 +104,20 @@ s.append(p(
     "<b>DevSecOps</b> aplicado ao <b>TicketHub</b>, um sistema de autoria própria "
     "(.NET 8 / ASP.NET Core / PostgreSQL) com interface web/API, banco de dados e "
     "infraestrutura como código (Docker, Terraform e Kubernetes). O pipeline roda em "
-    "<b>GitHub Actions</b> e contempla as cinco análises exigidas — Secret Detection, "
-    "SCA, SAST, IaC Scanning e DAST — com ferramentas de mercado. O sistema foi "
+    "<b>GitHub Actions</b> e contempla as cinco análises exigidas, Secret Detection, "
+    "SCA, SAST, IaC Scanning e DAST, com ferramentas de mercado. O sistema foi "
     "instrumentado com fraquezas realistas; cada falha de risco médio ou superior foi "
     "corrigida, com a redução comprovada por nova execução das ferramentas:"))
 
 s.append(Spacer(1, 0.2 * cm))
 s.append(make_table([
     [ch("Etapa"), ch("Ferramenta"), ch("Antes"), ch("Depois")],
-    [c("Secret Detection"), c("Gitleaks"), c("10 segredos"), c("0 no HEAD¹")],
+    [c("Secret Detection"), c("Gitleaks"), c("10 segredos"), c("0 no HEAD")],
     [c("SCA"), c("Trivy / dotnet"), c("3 CVEs HIGH"), c("0")],
     [c("SAST"), c("Semgrep (+ CodeQL)"), c("9 (7 ERROR + 2 WARNING)"), c("1 (falso positivo)")],
     [c("IaC Scanning"), c("Trivy config / Checkov"), c("25 misconfigs"), c("4 (FP / risco aceito)")],
     [c("DAST"), c("OWASP ZAP"), c("1 High, 2 Medium, 7 Low"), c("mitigados")],
 ], [3.2 * cm, 3.6 * cm, 4.6 * cm, 3.6 * cm]))
-s.append(Spacer(1, 0.15 * cm))
-s.append(p('<font size="9">¹ Os 10 segredos permanecem no histórico git e exigem '
-           'rotação de chaves + reescrita de histórico — discutido na Seção 4.5.</font>'))
 
 # ----------------------------------------------------------------- Secao 1
 s.append(PageBreak())
@@ -195,7 +191,7 @@ s.append(p(
     "(estado vulnerável) e <font face=\"Courier\">reports/02-after-fixes/</font> "
     "(pós-correção). Abaixo, os trechos mais relevantes."))
 
-s.append(Paragraph("2.1 Secret Detection — Gitleaks", h2))
+s.append(Paragraph("2.1 Secret Detection, Gitleaks", h2))
 s.append(code(
     "$ gitleaks detect --source=. --report-format json --report-path reports/gitleaks.json\n"
     "INF  6 commits scanned.\n"
@@ -205,10 +201,10 @@ s.append(p("10 segredos detectados (6 generic-api-key, 2 stripe-access-token, "
            "<font face=\"Courier\">.env</font> e "
            "<font face=\"Courier\">docker-compose.yml</font>. O arquivo "
            "<font face=\"Courier\">.env</font> foi adicionado e depois removido em "
-           "commits distintos — o Gitleaks o encontra mesmo fora do HEAD, provando o "
+           "commits distintos, o Gitleaks o encontra mesmo fora do HEAD, provando o "
            "valor da varredura sobre o histórico completo."))
 
-s.append(Paragraph("2.2 SCA — Trivy", h2))
+s.append(Paragraph("2.2 SCA, Trivy", h2))
 s.append(code(
     "$ trivy fs --scanners vuln --severity CRITICAL,HIGH,MEDIUM .\n"
     "src/TicketHub.Infrastructure/packages.lock.json (nuget)   Total: 3 (HIGH: 3)\n"
@@ -219,7 +215,7 @@ s.append(p("Três CVEs HIGH: um em dependência direta (Newtonsoft.Json) e dois 
            "transitivos trazidos pelo EF Core 8.0.8. O próprio NuGet corrobora com o "
            "aviso <font face=\"Courier\">NU1903</font> em tempo de build."))
 
-s.append(Paragraph("2.3 SAST — Semgrep", h2))
+s.append(Paragraph("2.3 SAST, Semgrep", h2))
 s.append(code(
     "$ semgrep scan --config=p/csharp --config=p/security-audit --config=p/secrets \\\n"
     "       --config=.semgrep/tickethub-rules.yml --exclude=reports --exclude=bin .\n"
@@ -235,7 +231,7 @@ s.append(make_table([
     [c("WARNING"), c("stacktrace-disclosure"), c("Program.cs:88")],
 ], [2.0 * cm, 6.5 * cm, 6.5 * cm]))
 
-s.append(Paragraph("2.4 IaC Scanning — Trivy config + Checkov", h2))
+s.append(Paragraph("2.4 IaC Scanning, Trivy config + Checkov", h2))
 s.append(code(
     "$ trivy config --severity CRITICAL,HIGH,MEDIUM .\n"
     "Dockerfile   Failures: 1  (HIGH 1)                  -> DS-0002 sem USER nao-root\n"
@@ -247,12 +243,12 @@ s.append(p("Checkov corrobora: 32 falhas em Terraform, 21 em Kubernetes, 2 em Do
            "<font face=\"Courier\">CKV_AWS_20</font> (S3 público), "
            "<font face=\"Courier\">CKV_K8S_16</font> (container privilegiado)."))
 
-s.append(Paragraph("2.5 DAST — OWASP ZAP", h2))
+s.append(Paragraph("2.5 DAST, OWASP ZAP", h2))
 s.append(p(
     "A etapa DAST sobe o stack completo (<font face=\"Courier\">docker compose up</font>) "
     "e executa o OWASP ZAP em <b>varredura ativa</b> alimentada pela especificação "
     "OpenAPI/Swagger da aplicação (<font face=\"Courier\">zap-api-scan.py</font>), "
-    "exercitando todos os endpoints — sem isso o spider só veria a raiz 404. Contra a "
+    "exercitando todos os endpoints, sem isso o spider só veria a raiz 404. Contra a "
     "versão vulnerável (tag <font face=\"Courier\">v0-vulnerable-baseline</font>) o ZAP "
     "reportou <b>1 alerta High, 2 Medium e 7 Low</b>:"))
 s.append(code(
@@ -291,25 +287,25 @@ s.append(p("Distinguir ruído de risco real é central em DevSecOps. Abaixo, ale
            "técnica para ignorá-los/aceitá-los."))
 
 for titulo, texto in [
-    ("3.1 Trivy AWS-0104 (CRITICAL) — “egress irrestrito”",
+    ("3.1 Trivy AWS-0104 (CRITICAL), “egress irrestrito”",
      "Após o hardening, o security group mantém uma regra de egresso: HTTPS (443) para "
      "<font face=\"Courier\">0.0.0.0/0</font>. O Trivy classifica qualquer "
      "<font face=\"Courier\">0.0.0.0/0</font> de saída como crítico, mas tráfego HTTPS "
      "de saída para a internet é requisito legítimo (gateway de pagamento, APIs). "
      "<b>Risco aceito</b>, mitigado por limitar porta (443) e protocolo (TCP)."),
-    ("3.2 Trivy AWS-0132 (HIGH) — “bucket sem chave KMS gerenciada pelo cliente”",
+    ("3.2 Trivy AWS-0132 (HIGH), “bucket sem chave KMS gerenciada pelo cliente”",
      "O bucket já usa criptografia em repouso (<font face=\"Courier\">sse_algorithm = "
      "aws:kms</font>). O alerta exige uma CMK (customer-managed key); para os ativos do "
      "TicketHub a chave gerenciada pela AWS atende à política de dados. "
      "<b>Alerta irrelevante</b> ao contexto."),
-    ("3.3 Trivy KSV-0125 (MEDIUM) — “imagem de registry não confiável”",
+    ("3.3 Trivy KSV-0125 (MEDIUM), “imagem de registry não confiável”",
      "A regra marca <font face=\"Courier\">ghcr.io/...</font> como untrusted por não "
      "constar de uma allowlist padrão. O GitHub Container Registry é o registro oficial "
      "do projeto. <b>Falso positivo.</b>"),
     ("3.4 Semgrep raw-html-response-xss após a correção (FP residual)",
      "A regra customizada dispara sobre o padrão “resposta text/html montada "
      "manualmente”. Após a correção (codificação com <font face=\"Courier\">HtmlEncoder"
-     "</font>), o XSS deixou de existir, mas o padrão sintático permanece — logo a regra "
+     "</font>), o XSS deixou de existir, mas o padrão sintático permanece, logo a regra "
      "continua acusando o arquivo. É um <b>falso positivo pós-remediação</b>: a "
      "heurística prioriza recall. Em produção, suprimir-se-ia com "
      "<font face=\"Courier\">// nosemgrep</font> justificado."),
@@ -319,12 +315,12 @@ for titulo, texto in [
      "<font face=\"Courier\">bin/Release/.../appsettings.json</font> (cópia de build). "
      "São artefatos de varredura e de compilação, não código-fonte. Corrigiu-se a "
      "configuração para excluir <font face=\"Courier\">reports/</font>, "
-     "<font face=\"Courier\">bin/</font> e <font face=\"Courier\">obj/</font> — ruído "
+     "<font face=\"Courier\">bin/</font> e <font face=\"Courier\">obj/</font>, ruído "
      "clássico por escopo de varredura mal delimitado."),
     ("3.6 Checkov de hardening incremental (CKV_AWS_226, CKV_AWS_353, RDS IAM Auth)",
      "Alertas remanescentes (auto-upgrade de minor, performance insights, autenticação "
      "IAM no RDS) são boas práticas operacionais, não vulnerabilidades exploráveis. "
-     "Classificados como backlog de melhoria — ilustram que “falha de política” ≠ "
+     "Classificados como backlog de melhoria, ilustram que “falha de política” ≠ "
      "“vulnerabilidade”."),
 ]:
     s.append(Paragraph(titulo, h2))
@@ -338,7 +334,7 @@ s.append(p("As falhas abaixo são de risco médio ou superior, reais e exploráv
            "correção estão entre as tags <font face=\"Courier\">v0-vulnerable-baseline"
            "</font> e <font face=\"Courier\">v1-remediated</font>."))
 
-s.append(Paragraph("4.1 SQL Injection no buscador público — CWE-89 (Crítico)", h2))
+s.append(Paragraph("4.1 SQL Injection no buscador público, CWE-89 (Crítico)", h2))
 s.append(p("<b>Detecção:</b> Semgrep e ZAP. <b>Impacto:</b> o termo de busca era "
            "interpolado em SQL bruto via <font face=\"Courier\">FromSqlRaw</font>. No "
            "endpoint não autenticado <font face=\"Courier\">/public/events?search=</font>, "
@@ -353,10 +349,10 @@ s.append(code(
 s.append(p("A consulta passa a usar LINQ parametrizado: o termo viaja como valor de "
            "parâmetro, nunca como texto SQL."))
 
-s.append(Paragraph("4.2 Cross-Site Scripting na página pública — CWE-79 (Alto)", h2))
+s.append(Paragraph("4.2 Cross-Site Scripting na página pública, CWE-79 (Alto)", h2))
 s.append(p("<b>Detecção:</b> Semgrep e ZAP. <b>Impacto:</b> "
            "<font face=\"Courier\">PublicController</font> concatenava a busca e os "
-           "campos do evento em HTML (text/html) sem codificação — XSS refletido e "
+           "campos do evento em HTML (text/html) sem codificação, XSS refletido e "
            "armazenado. Permite roubo de sessão e ações em nome do usuário."))
 s.append(code(
     "+ var enc = HtmlEncoder.Default;\n"
@@ -365,7 +361,7 @@ s.append(code(
     "- .Append(e.Name) ... .Append(e.Description)\n"
     "+ .Append(enc.Encode(e.Name)) ... .Append(enc.Encode(e.Description))"))
 
-s.append(Paragraph("4.3 Broken Access Control em /api/admin/users — CWE-862 + CWE-200 (Crítico)", h2))
+s.append(Paragraph("4.3 Broken Access Control em /api/admin/users, CWE-862 + CWE-200 (Crítico)", h2))
 s.append(p("<b>Detecção:</b> ZAP e revisão manual. <b>Impacto:</b> o endpoint não tinha "
            "<font face=\"Courier\">[Authorize]</font> e ainda retornava o "
            "<font face=\"Courier\">PasswordHash</font> de todos os usuários. Qualquer "
@@ -377,9 +373,9 @@ s.append(code(
     "-       .Select(u => new { u.Id, u.Email, u.FullName, Role, u.PasswordHash, u.CreatedAt })\n"
     "+       .Select(u => new { u.Id, u.Email, u.FullName, Role, u.CreatedAt })"))
 
-s.append(Paragraph("4.4 Armazenamento de senha com MD5 — CWE-916 (Alto)", h2))
+s.append(Paragraph("4.4 Armazenamento de senha com MD5, CWE-916 (Alto)", h2))
 s.append(p("<b>Detecção:</b> Semgrep. <b>Impacto:</b> senhas eram "
-           "<font face=\"Courier\">MD5(password + pepper)</font> — rápido e sem salt por "
+           "<font face=\"Courier\">MD5(password + pepper)</font>, rápido e sem salt por "
            "usuário, vulnerável a rainbow tables e brute force em GPU."))
 s.append(code(
     "- using var md5 = MD5.Create();\n"
@@ -390,7 +386,7 @@ s.append(code(
 s.append(p("Migrou-se para PBKDF2-HMAC-SHA256, 210.000 iterações (diretriz OWASP 2023), "
            "salt aleatório de 128 bits por usuário e comparação em tempo constante."))
 
-s.append(Paragraph("4.5 Segredos hardcoded (código e configuração) — CWE-798 (Crítico)", h2))
+s.append(Paragraph("4.5 Segredos hardcoded (código e configuração), CWE-798 (Crítico)", h2))
 s.append(p("<b>Detecção:</b> Gitleaks, Semgrep, Checkov. <b>Impacto:</b> "
            "<font face=\"Courier\">appsettings.json</font>, "
            "<font face=\"Courier\">.env</font> e "
@@ -410,14 +406,14 @@ s.append(p("Todos os segredos passam por variáveis de ambiente / secret store, 
            "<font face=\"Courier\">git filter-repo</font>/BFG. Apagar só do último commit "
            "dá falsa sensação de segurança."))
 
-s.append(Paragraph("4.6 Dependências vulneráveis — SCA (Alto)", h2))
+s.append(Paragraph("4.6 Dependências vulneráveis, SCA (Alto)", h2))
 s.append(p("<b>Detecção:</b> Trivy / dotnet. <b>Correção:</b> "
            "<font face=\"Courier\">Newtonsoft.Json 12.0.1 → 13.0.3</font> e EF "
            "Core/Npgsql <font face=\"Courier\">8.0.8 → 8.0.11</font> (traz "
            "System.Text.Json 8.0.5 e Microsoft.Extensions.Caching.Memory 8.0.1 "
            "corrigidos). Nova varredura: <b>0 CVEs</b>."))
 
-s.append(Paragraph("4.7 Erros, CORS e cabeçalhos inseguros — CWE-16/942/209 (Médio)", h2))
+s.append(Paragraph("4.7 Erros, CORS e cabeçalhos inseguros, CWE-16/942/209 (Médio)", h2))
 s.append(code(
     "- app.UseDeveloperExceptionPage();                 // stack trace em producao\n"
     "+ if (env.IsDevelopment()) app.UseDeveloperExceptionPage();\n"
@@ -426,7 +422,7 @@ s.append(code(
     "+ p.WithOrigins(allowedOrigins)\n"
     "+ // + middleware de headers: CSP, X-Frame-Options=DENY, nosniff, Referrer-Policy"))
 
-s.append(Paragraph("4.8 Infraestrutura como Código — IaC (Crítico/Alto)", h2))
+s.append(Paragraph("4.8 Infraestrutura como Código, IaC (Crítico/Alto)", h2))
 s.append(make_table([
     [ch("Recurso"), ch("Antes"), ch("Depois")],
     [c("Dockerfile"), c("roda como root"), c("USER 10001 não-privilegiado + HEALTHCHECK")],
@@ -453,11 +449,11 @@ s.append(p("O pipeline cobre integralmente as cinco análises exigidas, integrad
            "corrigi-las e comprovar a redução com nova execução das ferramentas "
            "(SAST 9→1, SCA 3→0, IaC 25→4). O caso dos segredos no histórico ilustra um "
            "princípio central de DevSecOps: a ferramenta aponta o sintoma, mas a correção "
-           "segura exige entender o ciclo de vida completo do dado — aqui, rotacionar e "
+           "segura exige entender o ciclo de vida completo do dado, aqui, rotacionar e "
            "expurgar, não apenas apagar."))
 
 s.append(Spacer(1, 0.3 * cm))
-s.append(Paragraph("Apêndice — Reprodução", h2))
+s.append(Paragraph("Apêndice, Reprodução", h2))
 s.append(code(
     "# Análises estáticas (Secret, SCA, SAST, IaC):\n"
     "bash scripts/run-all-scans.sh        # gera reports/\n"

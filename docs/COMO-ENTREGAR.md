@@ -5,7 +5,7 @@
 ```bash
 cd tickethub
 gh repo create tickethub --public --source=. --remote=origin --push   # se tiver o gh CLI
-# — ou manualmente —
+# ou manualmente
 git remote add origin https://github.com/<seu-usuario>/tickethub.git
 git push -u origin main --tags
 ```
@@ -37,14 +37,14 @@ O PDF oficial (padrão UFSC, com logo/cabeçalho) é
 ```bash
 python3 scripts/gerar_relatorio.py
 ```
-> Confira a constante `COURSE` no topo de `scripts/gerar_relatorio.py` — está como
-> `"INE5680 - Segurança da Informação"`; ajuste o código da disciplina se necessário.
+> Confira a constante `COURSE` no topo de `scripts/gerar_relatorio.py`, está como
+> `"INE5429 - Segurança da Informação"`; ajuste o código da disciplina se necessário.
 
 ## 4. Checklist de entrega (Moodle, PDF)
 
 - [ ] Link do repositório público preenchido no relatório
-- [ ] Seção 1 — Descrição do sistema e ferramental ✅
-- [ ] Seção 2 — Evidências das 5 ferramentas (incluir print do ZAP do passo 2) ✅
-- [ ] Seção 3 — Falsos positivos ✅
-- [ ] Seção 4 — Correção das falhas reais (diffs) ✅
+- [ ] Seção 1, Descrição do sistema e ferramental ✅
+- [ ] Seção 2, Evidências das 5 ferramentas (incluir print do ZAP do passo 2) ✅
+- [ ] Seção 3, Falsos positivos ✅
+- [ ] Seção 4, Correção das falhas reais (diffs) ✅
 - [ ] PDF gerado e enviado **antes de 26/06 23:59**
