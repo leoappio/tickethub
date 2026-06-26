@@ -3,11 +3,11 @@ services:
     image: postgres:16-alpine
     container_name: tickethub-db
     environment:
-      POSTGRES_USER: tickethub
-      POSTGRES_PASSWORD: tickethub_dev_pwd
-      POSTGRES_DB: tickethub
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-tickethub}
+    expose:
+      - "5432"          # reachable only on the internal compose network, not published
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -17,10 +17,10 @@ services:
       dockerfile: Dockerfile
     container_name: tickethub-api
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__Default: "Host=db;Port=5432;Database=tickethub;Username=tickethub;Password=tickethub_dev_pwd"
-      Jwt__Key: "8f4b2e1c9a7d6350fae21bc4d98e7a13c0b5d6e7f8091a2b3c4d5e6f7a8b9c0d"
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=${POSTGRES_DB:-tickethub};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Jwt__Key: ${JWT_KEY:?set JWT_KEY in .env}
     ports:
       - "8080:8080"
     depends_on:
