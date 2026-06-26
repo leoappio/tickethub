@@ -13,3 +13,6 @@ zap_tmp/
 
 ## Environment overrides
 appsettings.*.local.json
+
+## Raw scanner output (machine reports may contain captured secrets) — kept local
+reports/
