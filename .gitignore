@@ -1,0 +1,15 @@
+## .NET build output
+bin/
+obj/
+*.user
+
+## IDE
+.vs/
+.idea/
+
+## Local scan output (kept out of the repo; committed copies live under reports/)
+*.tmp
+zap_tmp/
+
+## Environment overrides
+appsettings.*.local.json

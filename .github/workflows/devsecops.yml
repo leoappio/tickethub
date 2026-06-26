@@ -1,0 +1,206 @@
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF to the Security tab
+  actions: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. SECRET DETECTION — scans the full commit history for leaked credentials
+  # ---------------------------------------------------------------------------
+  secret-detection:
+    name: Secret Detection (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so secrets in old commits are detected
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # 2. SCA — Software Composition Analysis of third-party dependencies
+  # ---------------------------------------------------------------------------
+  sca:
+    name: SCA (Trivy + dotnet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore (generate lock files)
+        run: dotnet restore TicketHub.sln
+
+      - name: dotnet list package --vulnerable
+        run: dotnet list TicketHub.sln package --vulnerable --include-transitive || true
+
+      - name: Trivy dependency scan (SARIF)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scanners: vuln
+          scan-ref: .
+          format: sarif
+          output: trivy-sca.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+        env:
+          TRIVY_EXIT_CODE: 0
+
+      - name: Upload SCA SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-sca.sarif
+          category: trivy-sca
+
+      - name: Upload SCA artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sca-trivy
+          path: trivy-sca.sarif
+
+  # ---------------------------------------------------------------------------
+  # 3. SAST — Static Application Security Testing of first-party code
+  # ---------------------------------------------------------------------------
+  sast-semgrep:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Semgrep scan
+        run: semgrep scan --config=p/csharp --config=p/security-audit --config=p/secrets --sarif --output semgrep.sarif || true
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Upload Semgrep artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sast-semgrep
+          path: semgrep.sarif
+
+  sast-codeql:
+    name: SAST (CodeQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          queries: security-extended
+
+      - name: Build
+        run: dotnet build TicketHub.sln -c Release
+
+      - name: CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: codeql-csharp
+
+  # ---------------------------------------------------------------------------
+  # 4. IaC SCANNING — Dockerfile, Terraform and Kubernetes manifests
+  # ---------------------------------------------------------------------------
+  iac:
+    name: IaC Scanning (Checkov + Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: dockerfile,terraform,kubernetes
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+          soft_fail: true
+
+      - name: Trivy config (IaC) scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-iac.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov.sarif
+          category: checkov
+
+      - name: Upload IaC artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iac-reports
+          path: |
+            checkov.sarif
+            trivy-iac.sarif
+
+  # ---------------------------------------------------------------------------
+  # 5. DAST — Dynamic Application Security Testing against the running app
+  # ---------------------------------------------------------------------------
+  dast:
+    name: DAST (OWASP ZAP)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start the stack
+        run: |
+          docker compose up -d --build
+          echo "Waiting for the API to become healthy..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null; then
+              echo "API is up"; break
+            fi
+            sleep 5
+          done
+
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:8080'
+          cmd_options: '-a'
+          allow_issue_writing: false
+          fail_action: false
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
