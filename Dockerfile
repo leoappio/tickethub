@@ -15,7 +15,15 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
+# Run as a non-root, unprivileged user.
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin appuser \
+    && chown -R appuser:appuser /app
+USER 10001
+
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+    CMD ["sh", "-c", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
 
 ENTRYPOINT ["dotnet", "TicketHub.Api.dll"]

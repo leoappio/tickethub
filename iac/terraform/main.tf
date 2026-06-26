@@ -17,9 +17,11 @@ variable "region" {
   default = "sa-east-1"
 }
 
-variable "db_password" {
-  type    = string
-  default = "P@ssw0rd-TicketHub-Prod-2026"
+# Restrict administrative/database access to a known corporate CIDR.
+variable "admin_cidr" {
+  type        = string
+  description = "CIDR allowed to reach SSH/Postgres (e.g. the VPN egress range)."
+  default     = "10.0.0.0/16"
 }
 
 # --- Networking ---------------------------------------------------------------
@@ -29,33 +31,26 @@ resource "aws_security_group" "api" {
   description = "TicketHub API ingress"
 
   ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "HTTP"
+    description = "HTTP from the load balancer subnet"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.admin_cidr]
   }
 
   ingress {
-    description = "PostgreSQL"
+    description = "PostgreSQL from the application subnet"
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.admin_cidr]
   }
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS egress only"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -63,18 +58,23 @@ resource "aws_security_group" "api" {
 # --- Database -----------------------------------------------------------------
 
 resource "aws_db_instance" "tickethub" {
-  identifier          = "tickethub-prod"
-  engine              = "postgres"
-  engine_version      = "16"
-  instance_class      = "db.t3.medium"
-  allocated_storage   = 50
-  db_name             = "tickethub"
-  username            = "tickethub"
-  password            = var.db_password
-  publicly_accessible = true
-  storage_encrypted   = false
-  skip_final_snapshot = true
-  vpc_security_group_ids = [aws_security_group.api.id]
+  identifier                  = "tickethub-prod"
+  engine                      = "postgres"
+  engine_version              = "16"
+  instance_class              = "db.t3.medium"
+  allocated_storage           = 50
+  db_name                     = "tickethub"
+  username                    = "tickethub"
+  manage_master_user_password = true # password managed in AWS Secrets Manager
+  publicly_accessible         = false
+  storage_encrypted           = true
+  deletion_protection         = true
+  auto_minor_version_upgrade  = true
+  performance_insights_enabled = true
+  backup_retention_period     = 14
+  skip_final_snapshot         = false
+  final_snapshot_identifier   = "tickethub-prod-final"
+  vpc_security_group_ids      = [aws_security_group.api.id]
 }
 
 # --- Object storage for ticket assets / reports -------------------------------
@@ -85,15 +85,32 @@ resource "aws_s3_bucket" "assets" {
 
 resource "aws_s3_bucket_public_access_block" "assets" {
   bucket                  = aws_s3_bucket.assets.id
-  block_public_acls       = false
-  block_public_policy     = false
-  ignore_public_acls      = false
-  restrict_public_buckets = false
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_acl" "assets" {
+resource "aws_s3_bucket_server_side_encryption_configuration" "assets" {
   bucket = aws_s3_bucket.assets.id
-  acl    = "public-read"
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "assets" {
+  bucket = aws_s3_bucket.assets.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_logging" "assets" {
+  bucket        = aws_s3_bucket.assets.id
+  target_bucket = aws_s3_bucket.assets.id
+  target_prefix = "access-logs/"
 }
 
 # --- Compute ------------------------------------------------------------------
@@ -102,10 +119,15 @@ resource "aws_instance" "api" {
   ami                         = "ami-0c1b4dff690b5d229"
   instance_type               = "t3.small"
   vpc_security_group_ids      = [aws_security_group.api.id]
-  associate_public_ip_address = true
+  associate_public_ip_address = false
 
   metadata_options {
-    http_tokens = "optional"
+    http_tokens   = "required" # enforce IMDSv2
+    http_endpoint = "enabled"
+  }
+
+  root_block_device {
+    encrypted = true
   }
 
   tags = {
@@ -113,6 +135,6 @@ resource "aws_instance" "api" {
   }
 }
 
-output "api_public_ip" {
-  value = aws_instance.api.public_ip
+output "db_endpoint" {
+  value = aws_db_instance.tickethub.endpoint
 }

@@ -1,7 +1,24 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tickethub
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tickethub-secrets
+  namespace: tickethub
+type: Opaque
+stringData:
+  # Populated by the CI/CD secret store (sealed-secrets / external-secrets), not committed.
+  ConnectionStrings__Default: "REPLACED_AT_DEPLOY_TIME"
+  Jwt__Key: "REPLACED_AT_DEPLOY_TIME"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: tickethub-api
+  namespace: tickethub
   labels:
     app: tickethub-api
 spec:
@@ -14,27 +31,55 @@ spec:
       labels:
         app: tickethub-api
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: api
-          image: tickethub/api:latest
+          image: ghcr.io/leonardo/tickethub-api:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ports:
             - containerPort: 8080
-          env:
-            - name: ConnectionStrings__Default
-              value: "Host=db;Port=5432;Database=tickethub;Username=tickethub;Password=tickethub_dev_pwd"
-            - name: Jwt__Key
-              value: "8f4b2e1c9a7d6350fae21bc4d98e7a13c0b5d6e7f8091a2b3c4d5e6f7a8b9c0d"
+          envFrom:
+            - secretRef:
+                name: tickethub-secrets
           securityContext:
-            privileged: true
-            runAsUser: 0
-            allowPrivilegeEscalation: true
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: [ "ALL" ]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: tickethub-api
+  namespace: tickethub
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: tickethub-api
   ports:
