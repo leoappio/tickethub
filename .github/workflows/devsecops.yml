@@ -52,7 +52,7 @@ jobs:
         run: dotnet list TicketHub.sln package --vulnerable --include-transitive || true
 
       - name: Trivy dependency scan (SARIF)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           scanners: vuln
@@ -65,6 +65,7 @@ jobs:
 
       - name: Upload SCA SARIF
         uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
         if: always()
         with:
           sarif_file: trivy-sca.sarif
@@ -93,6 +94,7 @@ jobs:
 
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -140,7 +142,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Checkov
-        uses: bridgecrewio/checkov-action@v12
+        uses: bridgecrewio/checkov-action@v12.1347.0
         with:
           directory: .
           framework: dockerfile,terraform,kubernetes
@@ -149,7 +151,7 @@ jobs:
           soft_fail: true
 
       - name: Trivy config (IaC) scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: config
           scan-ref: .
@@ -159,6 +161,7 @@ jobs:
 
       - name: Upload Checkov SARIF
         uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
         if: always()
         with:
           sarif_file: checkov.sarif
